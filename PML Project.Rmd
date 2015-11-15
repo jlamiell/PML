@@ -1,0 +1,91 @@
+---
+title: 'Coursera PML Project: Qualitative Activity Recognition'
+author: "JM Lamiell"
+date: "November 14, 2015"
+output: html_document
+---
+
+# Introduction
+
+This project uses [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har) to assess the quality of unilateral dumbbell biceps curl techniques.  People regularly quantify how much of an activity they do, but they rarely assess how well they do it. This project uses data from accelerometers on the belt, forearm, arm, and dumbbell of six participants who performed dumbbell curls correctly and incorrectly in five different ways in order to classify or predict the type of activity.
+
+# Machine learning model
+
+Project training [data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) includes 19,662 observations of 160 variables.  This R code loads the dataset:
+
+```{r}
+if (sum(dir() == "train.csv") == 0) {
+        url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+        download.file(url, "train.csv", method = "wget")
+}
+har_train <- read.csv("train.csv")
+```
+
+The first seven dataset variables are related to time and participant/window identification.  They add little or nothing to  predictive model development and can be eliminated:
+
+```{r}
+train_pml <- har_train[, -(1:7)]
+```
+
+Participants were asked to perform one set of ten repetitions of the Unilateral Dumbbell Biceps Curl in five different ways: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D), and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other four classes correspond to common mistakes. The exercises were performed by six male participants aged 20-28 years with little weight lifting experience. Recorded data included three-axes acceleration, gyroscope, and magnetometer data sampled at 45 Hz. A 2.5 second sliding window was used for feature extraction. In each step of the sliding window, Euler angles (roll, pitch, and yaw) were calculated with the raw accelerometer, gyroscope and magnetometer readings. Eight features (mean, variance, standard deviation, max, min, amplitude, kurtosis, and skewness) were calculated.  This implies 38 variables for each of the four sensors.  Twenty-six of the variables were calcuated and therefore probably add nothing significant to the classification model.  This R code eliminates the calculated observations:
+
+```{r}
+train_har <- train_pml[, -grep('kurtosis|skewness|max|min|amplitude|var|avg|stddev|total', names(train_pml))]
+```
+
+The processed training dataset now includes 19,622 observations of 49 variables.  The task is to develop a model that predicts the dataset outcome variable (classe) using the remaining 48 variables.
+
+There is no additional variable pre-processing, i.e., correlated variables are not eliminated and there is no scaling, centering, or principal component analysis.  Consistent with the approach of the dataset creators, a random forest technique (using the R caret package) for model development was utilized because of sensor data noise and excellent random forest performance.  This R code loads caret and sets aside 30 percent of the training dataset for model testing:
+
+```{r, message = FALSE}
+set.seed(0)
+library(caret)
+inTrain <- createDataPartition(y = train_har$classe, p = 0.7, list = FALSE)
+training <- train_har[inTrain,]
+testing <- train_har[-inTrain,]
+```
+
+This R code produces the random forest model (with 10-fold cross validation) using all available variables to predict the outcome (classe):
+
+```{r}
+rfFit <- train(classe ~ ., data = training, method = 'rf', trControl = trainControl(method = 'cv'))
+rfFit
+```
+
+# Results
+
+The model was applied to the independent training dataset with this R code:
+
+```{r}
+rfpredictions <- predict(rfFit, testing)
+```
+
+Here is the R code to estimate the out of sample error usign the training dataset:
+
+```{r}
+confusionMatrix(testing$classe, rfpredictions)
+```
+
+The overall out of sample accuracy is 99.5% (95% CI 99.2% to 99.6%) for this model.
+
+Here is R code to load and preprocess the 20 assigned test cases and predict activity:
+
+```{r}
+if (sum(dir() == "test.csv") == 0) {
+        url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+        download.file(url, "test.csv", method = "wget")
+}
+har_test <- read.csv("test.csv")
+test_pml <- har_test[, -(1:7)]
+test_har <- test_pml[, -grep('kurtosis|skewness|max|min|amplitude|var|avg|stddev|total', names(test_pml))]
+predict(rfFit, test_har)
+```
+All predictions were correct for the assigned test cases.
+
+# Conclusion
+
+Sensor data collected during exercise can reasonably predict exercise performance quality. A random forest model using 10-fold cross validation predicts performance quality with high accuracy.
+
+# Reference
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th Augmented Human (AH) International Conference in cooperation with ACM SIGCHI (Augmented Human'13) . Stuttgart, Germany: ACM SIGCHI, 2013.
